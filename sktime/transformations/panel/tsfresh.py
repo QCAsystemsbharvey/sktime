@@ -7,6 +7,7 @@ __all__ = ["TSFreshFeatureExtractor", "TSFreshRelevantFeatureExtractor"]
 
 from warnings import warn
 
+
 from sktime.datatypes._panel._convert import from_nested_to_long
 from sktime.transformations.base import BaseTransformer
 from sktime.utils.validation import check_n_jobs
@@ -41,6 +42,8 @@ class _TSFreshFeatureExtractor(BaseTransformer):
         profiling_filename=None,
         profiling_sorting=None,
         distributor=None,
+        column_names=None,
+    
     ):
         self.default_fc_parameters = default_fc_parameters
         self.kind_to_fc_parameters = kind_to_fc_parameters
@@ -53,12 +56,16 @@ class _TSFreshFeatureExtractor(BaseTransformer):
         self.profiling_sorting = profiling_sorting
         self.profiling_filename = profiling_filename
         self.distributor = distributor
+        self.column_names = column_names
+    
 
         super(_TSFreshFeatureExtractor, self).__init__()
 
         # _get_extraction_params should be after the init because this imports tsfresh
         # and the init checks for python version and tsfresh being present
         self.default_fc_parameters_ = self._get_extraction_params()
+
+   
 
     def _get_extraction_params(self):
         """Set default parameters from tsfresh."""
@@ -242,6 +249,8 @@ class TSFreshFeatureExtractor(_TSFreshFeatureExtractor):
         profiling_filename=None,
         profiling_sorting=None,
         distributor=None,
+        column_names=None,
+      
     ):
         super(TSFreshFeatureExtractor, self).__init__(
             default_fc_parameters=default_fc_parameters,
@@ -255,7 +264,18 @@ class TSFreshFeatureExtractor(_TSFreshFeatureExtractor):
             profiling_filename=profiling_filename,
             profiling_sorting=profiling_sorting,
             distributor=distributor,
+            column_names=column_names
+          
         )
+        
+    def is_valid_columns_parameter(self, column_names):
+        if isinstance(column_names,str):
+            column_names = column_names.lower()
+
+        if column_names not in [None,'safe','tsfresh']:
+            raise ValueError('Invalid hyper-parameter column_names: please enter on of the following [None,\'safe\',\'tsfresh\']')
+        return column_names
+
 
     def _transform(self, X, y=None):
         """Transform X and return a transformed version.
@@ -298,12 +318,26 @@ class TSFreshFeatureExtractor(_TSFreshFeatureExtractor):
             column_sort="time_index",
             **self.default_fc_parameters_,
         )
+        # lazy imports to avoid hard dependency
+        import re 
+        #todo: need a function to check valid inputs.
+        column_names = self.is_valid_columns_parameter(self.column_names)
+
+        if column_names==None:
+            warn("Feature names will default to safe from tsfresh naming convention from 0.20.0 on. Safe will remove Json characters from feature names")
+
+        elif column_names=="safe":
+            Xt = Xt.rename(columns = lambda x:re.sub('[^A-Za-z0-9_ ]+', '', x))
+        
+        elif column_names=="tsfresh":
+            pass
 
         # When using the long input format, tsfresh seems to sort the index,
         # here we make sure we return the dataframe in the sort order as the
         # input data
         return Xt.reindex(X.index)
-
+    
+    
     @classmethod
     def get_test_params(cls, parameter_set="default"):
         """Return testing parameter settings for the estimator.
@@ -487,6 +521,7 @@ class TSFreshRelevantFeatureExtractor(_TSFreshFeatureExtractor):
         fdr_level=None,
         hypotheses_independent=None,
         ml_task="auto",
+        column_names=None,
     ):
         super(TSFreshRelevantFeatureExtractor, self).__init__(
             default_fc_parameters=default_fc_parameters,
@@ -500,6 +535,7 @@ class TSFreshRelevantFeatureExtractor(_TSFreshFeatureExtractor):
             profiling_filename=profiling_filename,
             profiling_sorting=profiling_sorting,
             distributor=distributor,
+            column_names=column_names
         )
 
         self.test_for_binary_target_binary_feature = (
@@ -618,6 +654,7 @@ class TSFreshRelevantFeatureExtractor(_TSFreshFeatureExtractor):
             profiling=self.profiling,
             profiling_filename=self.profiling_filename,
             profiling_sorting=self.profiling_sorting,
+            column_names=self.column_names,
         )
 
         self.selector_ = FeatureSelector(
@@ -628,16 +665,17 @@ class TSFreshRelevantFeatureExtractor(_TSFreshFeatureExtractor):
         )
 
         Xt = self.extractor_.fit_transform(X)
-        Xt = self.selector_.fit_transform(Xt, y)
-        Xt = Xt.reindex(X.index)
+        return Xt
+        # Xt = self.selector_.fit_transform(Xt, y)
+        # Xt = Xt.reindex(X.index)
 
-        self._is_fitted = True
+        # self._is_fitted = True
 
-        if not hasattr(self, "_output_convert") or self._output_convert == "auto":
-            X_out = self._convert_output(Xt, metadata=metadata)
-        else:
-            X_out = Xt
-        return X_out
+        # if not hasattr(self, "_output_convert") or self._output_convert == "auto":
+        #     X_out = self._convert_output(Xt, metadata=metadata)
+        # else:
+        #     X_out = Xt
+        # return X_out
 
     def _fit(self, X, y=None):
         """Fit.
@@ -666,6 +704,7 @@ class TSFreshRelevantFeatureExtractor(_TSFreshFeatureExtractor):
             profiling=self.profiling,
             profiling_filename=self.profiling_filename,
             profiling_sorting=self.profiling_sorting,
+            column_names=self.column_names,
         )
 
         self.selector_ = FeatureSelector(
